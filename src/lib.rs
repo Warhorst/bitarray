@@ -52,9 +52,12 @@ impl BitArray {
         if !(0..Self::MAX_LEN).contains(&index) {
             Err(())
         } else if bit {
+            // perform bitwise OR with a 1 shifted to the desired index, which will switch it to 1
             self.data |= 1 << index;
             Ok(())
         } else {
+            // perform bitwise AND with a number where every bit is switched to 1 except the desired
+            // one, which will switch it to 0
             self.data &= !(1 << index);
             Ok(())
         }
