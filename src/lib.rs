@@ -1,8 +1,6 @@
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-// todo maybe store the len in the u128 too, so it can be stored more efficiently
-
 /// Array for storing boolean values.
 ///
 /// Has a max capacity of 128.
@@ -11,61 +9,58 @@ use serde::{Deserialize, Serialize};
 pub struct BitArray {
     /// Stores the bits of the bit array. Caps the max capacity to 128 bits
     data: u128,
-    /// The current len of the bit array
-    len: u8
 }
 
 impl BitArray {
     /// The maximum amount of bits in an u128.
     const MAX_LEN: u8 = 128;
 
+    /// Create an empty array and set the first (or all) elements to the values provided by the given iterator.
     pub fn new(iter: impl IntoIterator<Item=bool>) -> Self {
-        let mut data = 0;
-        let mut len = 0;
+        let mut arr = BitArray::default();
 
         iter
             .into_iter()
-            .for_each(|b| {
-                // shift the content of data one to the left, leaving a zero as latest element
-                data <<= 1;
+            .enumerate()
+            .for_each(|(i, b)| {
+                let res = arr.set(i as u8, b);
 
-                if b {
-                    // if the current bool is true, the rightmost bit (the latest element)
-                    // is set to 1 using bitwise OR with 1
-                    data |= 1;
-                }
-
-                if len < Self::MAX_LEN {
-                    len += 1;
-                } else {
+                if res.is_err() {
                     panic!("Attempted to create a BitArray with an iterator yielding more than {} elements", Self::MAX_LEN)
                 }
             });
 
-        BitArray {
-            data,
-            len
-        }
+        arr
     }
 
     /// Get the bit value of the array at the given index.
     /// Returns None if the index is out of bounds
     pub fn get(&self, index: u8) -> Option<bool> {
-        if !(0..self.len).contains(&index) {
+        if !(0..Self::MAX_LEN).contains(&index) {
             None
         } else {
-            // As the bits are stored in a way where the latest
-            // element is on the leas significant bit, the true index of the
-            // wished bit must be calculated with this formula
-            let bit_index = (self.len - 1) - index;
             // Bitwise AND with data and the desired index, which
             // will leave a number with a single bit set or zero if the bit was not set.
             // If anything greater than zero remained, the bit was set (true), otherwise not (false)
-            Some(self.data & (1 << bit_index) > 0)
+            Some(self.data & (1 << index) > 0)
         }
     }
 
-    /// Create an iterator over the bits of this array
+    /// Set the bit at the given index to the given bit. Returns Err if the index
+    /// is out of bounds.
+    pub fn set(&mut self, index: u8, bit: bool) -> Result<(), ()> {
+        if !(0..Self::MAX_LEN).contains(&index) {
+            Err(())
+        } else if bit {
+            self.data |= 1 << index;
+            Ok(())
+        } else {
+            self.data &= !(1 << index);
+            Ok(())
+        }
+    }
+
+    /// Create an iterator over all the bits of this array
     pub fn iter(&self) -> BitArrayIter {
         // Just copy the array, as it is not that big
         BitArrayIter::new(*self)
@@ -107,9 +102,7 @@ mod tests {
     #[test]
     fn new_works() {
         let arr = BitArray::new([true, false, false, false, false, true, true, true]);
-
-        assert_eq!(format!("{:b}", arr.data), "10000111");
-        assert_eq!(arr.len, 8);
+        assert_eq!(format!("{:b}", arr.data), "11100001");
     }
 
     #[test]
@@ -124,15 +117,20 @@ mod tests {
 
         assert_eq!(arr.get(0), Some(true));
         assert_eq!(arr.get(2), Some(false));
-        assert_eq!(arr.get(9), None)
+        assert_eq!(arr.get(129), None)
     }
 
     #[test]
     fn iter_works() {
-        let arr = BitArray::new([true, false, false, false, false, true, true, true]);
+        let iter = [true, false, false, false, false, true, true, true];
+        let arr = BitArray::new(iter);
 
-        let collect = arr.iter().collect::<Vec<_>>();
-
-        assert_eq!(collect, vec![true, false, false, false, false, true, true, true])
+        arr.iter()
+            .enumerate()
+            .for_each(|(i, b)| if i < iter.len() {
+                assert_eq!(iter[i], b, "the first elements must be the same as in the given iter");
+            } else {
+                assert_eq!(false, b, "the remaining elements must be false, as they were not set")
+            });
     }
 }
