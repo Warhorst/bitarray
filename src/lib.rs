@@ -1,5 +1,5 @@
 use std::fmt::{Binary, Display, Formatter};
-use std::ops::{BitAnd, BitAndAssign, BitOrAssign, Not};
+use std::ops::{BitAnd, BitAndAssign, BitOrAssign, Not, Shr};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -12,13 +12,11 @@ use serde::{Deserialize, Serialize};
 /// - u64
 /// - u128
 ///
-/// Defaults to u64 as the base.
-///
 /// Important: For maximum performance, the BitArray performs no bound checks when accessing
 /// bit values by index.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct BitArray<B: Base = u64>(B);
+pub struct BitArray<B: Base>(B);
 
 impl<B> BitArray<B> where B: Base {
     /// Create a new BitArray from an iterator of bool values.
@@ -69,6 +67,16 @@ impl<B> BitArray<B> where B: Base {
         // Just copy the array, as it is not that big
         BitArrayIter::new(*self)
     }
+
+    /// Creating an iterator over all the indexes set to 1.
+    pub fn ones(&self) -> Ones<B> {
+        Ones::new(*self)
+    }
+
+    /// Creating an iterator over all the indexes set to 0.
+    pub fn zeroes(&self) -> Zeroes<B> {
+        Zeroes::new(*self)
+    }
 }
 
 impl<B> Display for BitArray<B> where B: Base {
@@ -109,8 +117,89 @@ impl<B> Iterator for BitArrayIter<B> where B: Base {
     }
 }
 
+/// An iterator yielding the indexes of all 1 values of a [BitArray];
+pub struct Ones<B: Base> {
+    counter: u8,
+    inner: BitArrayIter<B>
+}
+
+impl<B> Ones<B> where B: Base {
+    fn new(array: BitArray<B>) -> Self {
+        Ones {
+            counter: 0,
+            inner: BitArrayIter::new(array)
+        }
+    }
+}
+
+impl<B> Iterator for Ones<B> where B: Base {
+    type Item = u8;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.counter == B::max_len() {
+                break None
+            }
+
+            let elem = self.inner.next();
+            let index = self.counter;
+            self.counter += 1;
+
+            if let Some(bit) = elem && bit == true {
+                break Some(index)
+            }
+        }
+    }
+}
+
+/// An iterator yielding the indexes of all 0 values of a [BitArray];
+pub struct Zeroes<B: Base> {
+    counter: u8,
+    inner: BitArrayIter<B>
+}
+
+impl<B> Zeroes<B> where B: Base {
+    fn new(array: BitArray<B>) -> Self {
+        Zeroes {
+            counter: 0,
+            inner: BitArrayIter::new(array)
+        }
+    }
+}
+
+impl<B> Iterator for Zeroes<B> where B: Base {
+    type Item = u8;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.counter == B::max_len() {
+                break None
+            }
+
+            let elem = self.inner.next();
+            let index = self.counter;
+            self.counter += 1;
+
+            if let Some(bit) = elem && bit == false {
+                break Some(index)
+            }
+        }
+    }
+}
+
 /// Defines a base for a [BitArray]. This base holds the data for the array.
-pub trait Base: Copy + Default + Binary + Not<Output=Self> + BitOrAssign + BitAnd<Output = Self> + BitAndAssign + PartialOrd + sealed::BaseSealed {
+pub trait Base:
+    Copy
+    + Default
+    + Display
+    + Binary
+    + Not<Output=Self>
+    + BitOrAssign
+    + BitAnd<Output = Self>
+    + BitAndAssign
+    + Shr<Output = Self>
+    + PartialOrd
+    + sealed::BaseSealed {
     /// Return the maximum amount of bits this base can hold
     fn max_len() -> u8;
 
@@ -119,6 +208,9 @@ pub trait Base: Copy + Default + Binary + Not<Output=Self> + BitOrAssign + BitAn
 
     /// Return the representation of zero for this base
     fn zero() -> Self;
+
+    /// Return the representation of one for this base
+    fn one() -> Self;
 
     /// Return the representation of a one at the given index for this base
     fn one_at_index(index: u8) -> Self;
@@ -136,6 +228,10 @@ impl Base for u8 {
 
     fn zero() -> Self {
         0
+    }
+
+    fn one() -> Self {
+        1
     }
 
     fn one_at_index(index: u8) -> Self {
@@ -157,6 +253,10 @@ impl Base for u16 {
         0
     }
 
+    fn one() -> Self {
+        1
+    }
+
     fn one_at_index(index: u8) -> Self {
         1 << index
     }
@@ -174,6 +274,10 @@ impl Base for u32 {
 
     fn zero() -> Self {
         0
+    }
+
+    fn one() -> Self {
+        1
     }
 
     fn one_at_index(index: u8) -> Self {
@@ -195,6 +299,10 @@ impl Base for u64 {
         0
     }
 
+    fn one() -> Self {
+        1
+    }
+
     fn one_at_index(index: u8) -> Self {
         1 << index
     }
@@ -212,6 +320,10 @@ impl Base for u128 {
 
     fn zero() -> Self {
         0
+    }
+
+    fn one() -> Self {
+        1
     }
 
     fn one_at_index(index: u8) -> Self {
@@ -260,5 +372,21 @@ mod tests {
             } else {
                 assert_eq!(false, b, "the remaining elements must be false, as they were not set")
             });
+    }
+
+    #[test]
+    fn ones_work() {
+        let expected = vec![0, 2, 4, 6];
+        let arr = BitArray::<u8>::new([true, false, true, false, true, false, true, false]);
+
+        assert_eq!(arr.ones().collect::<Vec<_>>(), expected)
+    }
+
+    #[test]
+    fn zeroes_work() {
+        let expected = vec![1, 3, 5, 7];
+        let arr = BitArray::<u8>::new([true, false, true, false, true, false, true, false]);
+
+        assert_eq!(arr.zeroes().collect::<Vec<_>>(), expected)
     }
 }
