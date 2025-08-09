@@ -21,15 +21,27 @@ use serde::{Deserialize, Serialize};
 pub struct BitArray<B: Base = u64>(B);
 
 impl<B> BitArray<B> where B: Base {
+    /// Create a new BitArray from an iterator of bool values.
+    ///
+    /// If the iterator yields fewer elements than [Base::max_len],
+    /// any remaining bit will default to false.
+    /// If the iterator yields more elements than [Base::max_len],
+    /// any additional element will be ignored.
     pub fn new(iter: impl IntoIterator<Item=bool>) -> Self {
         let mut arr = BitArray::default();
 
         iter
             .into_iter()
+            .take(B::max_len() as usize)
             .enumerate()
             .for_each(|(i, b)| { arr.set(i as u8, b); });
 
         arr
+    }
+
+    /// Crate a new BitArray where every bit is 1.
+    pub fn all_one() -> Self {
+        BitArray(B::max())
     }
 
     /// Get the bit value of the array at the given index.
@@ -102,6 +114,9 @@ pub trait Base: Copy + Default + Binary + Not<Output=Self> + BitOrAssign + BitAn
     /// Return the maximum amount of bits this base can hold
     fn max_len() -> u8;
 
+    /// Returns the max value of this base.
+    fn max() -> Self;
+
     /// Return the representation of zero for this base
     fn zero() -> Self;
 
@@ -113,6 +128,10 @@ impl sealed::BaseSealed for u8 {}
 impl Base for u8 {
     fn max_len() -> u8 {
         8
+    }
+
+    fn max() -> Self {
+        u8::MAX
     }
 
     fn zero() -> Self {
@@ -130,6 +149,10 @@ impl Base for u16 {
         16
     }
 
+    fn max() -> Self {
+        u16::MAX
+    }
+
     fn zero() -> Self {
         0
     }
@@ -143,6 +166,10 @@ impl sealed::BaseSealed for u32 {}
 impl Base for u32 {
     fn max_len() -> u8 {
         32
+    }
+
+    fn max() -> Self {
+        u32::MAX
     }
 
     fn zero() -> Self {
@@ -160,6 +187,10 @@ impl Base for u64 {
         64
     }
 
+    fn max() -> Self {
+        u64::MAX
+    }
+
     fn zero() -> Self {
         0
     }
@@ -173,6 +204,10 @@ impl sealed::BaseSealed for u128 {}
 impl Base for u128 {
     fn max_len() -> u8 {
         128
+    }
+
+    fn max() -> Self {
+        u128::MAX
     }
 
     fn zero() -> Self {
@@ -200,9 +235,9 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn new_with_too_large_iter_fails() {
-        let _ = BitArray::<u128>::new([true; 129]);
+    fn new_with_too_large_iter_works() {
+        let arr = BitArray::<u128>::new([true; 129]);
+        assert_eq!(arr, BitArray::all_one())
     }
 
     #[test]
