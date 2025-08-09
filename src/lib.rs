@@ -1,82 +1,77 @@
+use std::fmt::{Binary, Display, Formatter};
+use std::ops::{BitAnd, BitAndAssign, BitOrAssign, Not};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-/// Array for storing boolean values.
+/// An array for bit values (0 or 1) which holds all its data in a single integer.
 ///
-/// Has a max capacity of 128.
-#[derive(Clone, Copy, Default)]
+/// the following types are supported as a base:
+/// - u8
+/// - u16
+/// - u32
+/// - u64
+/// - u128
+///
+/// Defaults to u64 as the base.
+///
+/// Important: For maximum performance, the BitArray performs no bound checks when accessing
+/// bit values by index.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct BitArray {
-    /// Stores the bits of the bit array. Caps the max capacity to 128 bits
-    data: u128,
-}
+pub struct BitArray<B: Base = u64>(B);
 
-impl BitArray {
-    /// The maximum amount of bits in an u128.
-    const MAX_LEN: u8 = 128;
-
-    /// Create an empty array and set the first (or all) elements to the values provided by the given iterator.
+impl<B> BitArray<B> where B: Base {
     pub fn new(iter: impl IntoIterator<Item=bool>) -> Self {
         let mut arr = BitArray::default();
 
         iter
             .into_iter()
             .enumerate()
-            .for_each(|(i, b)| {
-                let res = arr.set(i as u8, b);
-
-                if res.is_err() {
-                    panic!("Attempted to create a BitArray with an iterator yielding more than {} elements", Self::MAX_LEN)
-                }
-            });
+            .for_each(|(i, b)| { arr.set(i as u8, b); });
 
         arr
     }
 
     /// Get the bit value of the array at the given index.
-    /// Returns None if the index is out of bounds
-    pub fn get(&self, index: u8) -> Option<bool> {
-        if !(0..Self::MAX_LEN).contains(&index) {
-            None
-        } else {
-            // Bitwise AND with data and the desired index, which
-            // will leave a number with a single bit set or zero if the bit was not set.
-            // If anything greater than zero remained, the bit was set (true), otherwise not (false)
-            Some(self.data & (1 << index) > 0)
-        }
+    pub fn get(&self, index: u8) -> bool {
+        // Bitwise AND with data and the desired index, which
+        // will leave a number with a single bit set or zero if the bit was not set.
+        // If anything greater than zero remained, the bit was set (true), otherwise not (false)
+        self.0 & (B::one_at_index(index)) > B::zero()
     }
 
-    /// Set the bit at the given index to the given bit. Returns Err if the index
-    /// is out of bounds.
-    pub fn set(&mut self, index: u8, bit: bool) -> Result<(), ()> {
-        if !(0..Self::MAX_LEN).contains(&index) {
-            Err(())
-        } else if bit {
+    /// Set the bit at the given index to the given bit.
+    pub fn set(&mut self, index: u8, bit: bool) {
+         if bit {
             // perform bitwise OR with a 1 shifted to the desired index, which will switch it to 1
-            self.data |= 1 << index;
-            Ok(())
+            self.0 |= B::one_at_index(index);
         } else {
             // perform bitwise AND with a number where every bit is switched to 1 except the desired
             // one, which will switch it to 0
-            self.data &= !(1 << index);
-            Ok(())
+            self.0 &= !B::one_at_index(index);
         }
     }
 
     /// Create an iterator over all the bits of this array
-    pub fn iter(&self) -> BitArrayIter {
+    pub fn iter(&self) -> BitArrayIter<B> {
         // Just copy the array, as it is not that big
         BitArrayIter::new(*self)
     }
 }
 
-pub struct BitArrayIter {
-    array: BitArray,
+impl<B> Display for BitArray<B> where B: Base {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:b}", self.0)
+    }
+}
+
+pub struct BitArrayIter<B: Base> {
+    array: BitArray<B>,
     counter: u8
 }
 
-impl BitArrayIter {
-    fn new(array: BitArray) -> Self {
+impl<B> BitArrayIter<B> where B: Base {
+    fn new(array: BitArray<B>) -> Self {
         BitArrayIter {
             array,
             counter: 0
@@ -84,18 +79,114 @@ impl BitArrayIter {
     }
 }
 
-impl Iterator for BitArrayIter {
+impl<B> Iterator for BitArrayIter<B> where B: Base {
     type Item = bool;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if self.counter == B::max_len() {
+            return None
+        }
+
         let item = self.array.get(self.counter);
         self.counter += 1;
-        item
+        Some(item)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        (0, Some(BitArray::MAX_LEN as usize))
+        (0, Some(B::max_len() as usize))
     }
+}
+
+/// Defines a base for a [BitArray]. This base holds the data for the array.
+pub trait Base: Copy + Default + Binary + Not<Output=Self> + BitOrAssign + BitAnd<Output = Self> + BitAndAssign + PartialOrd + sealed::BaseSealed {
+    /// Return the maximum amount of bits this base can hold
+    fn max_len() -> u8;
+
+    /// Return the representation of zero for this base
+    fn zero() -> Self;
+
+    /// Return the representation of a one at the given index for this base
+    fn one_at_index(index: u8) -> Self;
+}
+
+impl sealed::BaseSealed for u8 {}
+impl Base for u8 {
+    fn max_len() -> u8 {
+        8
+    }
+
+    fn zero() -> Self {
+        0
+    }
+
+    fn one_at_index(index: u8) -> Self {
+        1 << index
+    }
+}
+
+impl sealed::BaseSealed for u16 {}
+impl Base for u16 {
+    fn max_len() -> u8 {
+        16
+    }
+
+    fn zero() -> Self {
+        0
+    }
+
+    fn one_at_index(index: u8) -> Self {
+        1 << index
+    }
+}
+
+impl sealed::BaseSealed for u32 {}
+impl Base for u32 {
+    fn max_len() -> u8 {
+        32
+    }
+
+    fn zero() -> Self {
+        0
+    }
+
+    fn one_at_index(index: u8) -> Self {
+        1 << index
+    }
+}
+
+impl sealed::BaseSealed for u64 {}
+impl Base for u64 {
+    fn max_len() -> u8 {
+        64
+    }
+
+    fn zero() -> Self {
+        0
+    }
+
+    fn one_at_index(index: u8) -> Self {
+        1 << index
+    }
+}
+
+impl sealed::BaseSealed for u128 {}
+impl Base for u128 {
+    fn max_len() -> u8 {
+        128
+    }
+
+    fn zero() -> Self {
+        0
+    }
+
+    fn one_at_index(index: u8) -> Self {
+        1 << index
+    }
+}
+
+mod sealed {
+    /// Used to seal the [crate::Base] trait.
+    pub trait BaseSealed {}
 }
 
 #[cfg(test)]
@@ -104,29 +195,28 @@ mod tests {
 
     #[test]
     fn new_works() {
-        let arr = BitArray::new([true, false, false, false, false, true, true, true]);
-        assert_eq!(format!("{:b}", arr.data), "11100001");
+        let arr = BitArray::<u64>::new([true, false, false, false, false, true, true, true]);
+        assert_eq!(arr.to_string(), "11100001");
     }
 
     #[test]
     #[should_panic]
     fn new_with_too_large_iter_fails() {
-        let _ = BitArray::new([true; 129]);
+        let _ = BitArray::<u128>::new([true; 129]);
     }
 
     #[test]
     fn get_works() {
-        let arr = BitArray::new([true, false, false, false, false, true, true, true]);
+        let arr = BitArray::<u64>::new([true, false, false, false, false, true, true, true]);
 
-        assert_eq!(arr.get(0), Some(true));
-        assert_eq!(arr.get(2), Some(false));
-        assert_eq!(arr.get(129), None)
+        assert_eq!(arr.get(0), true);
+        assert_eq!(arr.get(2), false);
     }
 
     #[test]
     fn iter_works() {
         let iter = [true, false, false, false, false, true, true, true];
-        let arr = BitArray::new(iter);
+        let arr = BitArray::<u64>::new(iter);
 
         arr.iter()
             .enumerate()
