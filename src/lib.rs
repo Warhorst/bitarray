@@ -25,7 +25,7 @@ impl<B> BitArray<B> where B: Base {
     /// any remaining bit will default to false.
     /// If the iterator yields more elements than [Base::max_len],
     /// any additional element will be ignored.
-    pub fn new(iter: impl IntoIterator<Item=bool>) -> Self {
+    pub fn from_bits(iter: impl IntoIterator<Item=bool>) -> Self {
         let mut arr = BitArray::default();
 
         iter
@@ -33,6 +33,16 @@ impl<B> BitArray<B> where B: Base {
             .take(B::max_len() as usize)
             .enumerate()
             .for_each(|(i, b)| { arr.set(i as u8, b); });
+
+        arr
+    }
+
+    /// Create a new BitArray from an iterator of indexes. The bits at the given
+    /// indexes will be true and everything else will be false.
+    pub fn from_indices(iter: impl IntoIterator<Item=u8>) -> Self {
+        let mut arr = BitArray::default();
+
+        iter.into_iter().for_each(|index| arr.set(index, true));
 
         arr
     }
@@ -341,20 +351,26 @@ mod tests {
     use crate::BitArray;
 
     #[test]
-    fn new_works() {
-        let arr = BitArray::<u64>::new([true, false, false, false, false, true, true, true]);
+    fn from_bits_works() {
+        let arr = BitArray::<u8>::from_bits([true, false, false, false, false, true, true, true]);
         assert_eq!(arr.to_string(), "11100001");
     }
 
     #[test]
+    fn from_indexes_works() {
+        let arr = BitArray::<u8>::from_indices([0, 5, 6, 7]);
+        assert_eq!(arr.to_string(), "11100001")
+    }
+
+    #[test]
     fn new_with_too_large_iter_works() {
-        let arr = BitArray::<u128>::new([true; 129]);
+        let arr = BitArray::<u128>::from_bits([true; 129]);
         assert_eq!(arr, BitArray::all_one())
     }
 
     #[test]
     fn get_works() {
-        let arr = BitArray::<u64>::new([true, false, false, false, false, true, true, true]);
+        let arr = BitArray::<u64>::from_bits([true, false, false, false, false, true, true, true]);
 
         assert_eq!(arr.get(0), true);
         assert_eq!(arr.get(2), false);
@@ -363,7 +379,7 @@ mod tests {
     #[test]
     fn iter_works() {
         let iter = [true, false, false, false, false, true, true, true];
-        let arr = BitArray::<u64>::new(iter);
+        let arr = BitArray::<u64>::from_bits(iter);
 
         arr.iter()
             .enumerate()
@@ -377,7 +393,7 @@ mod tests {
     #[test]
     fn ones_work() {
         let expected = vec![0, 2, 4, 6];
-        let arr = BitArray::<u8>::new([true, false, true, false, true, false, true, false]);
+        let arr = BitArray::<u8>::from_bits([true, false, true, false, true, false, true, false]);
 
         assert_eq!(arr.ones().collect::<Vec<_>>(), expected)
     }
@@ -385,7 +401,7 @@ mod tests {
     #[test]
     fn zeroes_work() {
         let expected = vec![1, 3, 5, 7];
-        let arr = BitArray::<u8>::new([true, false, true, false, true, false, true, false]);
+        let arr = BitArray::<u8>::from_bits([true, false, true, false, true, false, true, false]);
 
         assert_eq!(arr.zeroes().collect::<Vec<_>>(), expected)
     }
